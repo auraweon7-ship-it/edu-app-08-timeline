@@ -65,6 +65,8 @@
   .pill-dark:active:not(:disabled) { background: var(--sunk); color: var(--ink); text-shadow: none; box-shadow: var(--press); }
   .pill-dark:disabled { background: var(--sunk); color: var(--mute); text-shadow: none; }
   .pill.danger:hover:not(:disabled) { color: rgb(var(--ng)); }
+  .pill[aria-pressed="true"] { background: linear-gradient(180deg, rgb(160,160,167), rgb(136,136,143)); color: #fff; border-color: rgba(0,0,0,.08);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,.18), inset 0 -1px 0 rgba(255,255,255,.25); }
   /* 포커스 링은 항상 보이게 */
   .pill:focus-visible, .tab-btn:focus-visible, .switch:focus-visible, .seg button:focus-visible, .ev-card:focus-visible, .vt-card:focus-visible,
   .tl-scroll:focus-visible, a:focus-visible, .linkish:focus-visible { outline: none; box-shadow: var(--focus); }
@@ -322,6 +324,7 @@
             <datalist id="modelList"></datalist>
             <button id="checkBtn" type="button" class="pill px-4 text-xs whitespace-nowrap">연결 확인</button>
           </div>
+          <div id="modelPresets" class="hidden mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="모델 빠른 선택"></div>
           <p id="checkStatus" class="hidden mt-2 rounded-xl px-3 py-2 text-xs"></p>
         </div>
       </div>
@@ -880,12 +883,13 @@ function chronoKit() {
 
 <script>
 // 화면·저장 파일에 표시되는 앱 버전. 수정할 때마다 올림: 새 기능 → 둘째 자리, 고침·디자인 → 셋째 자리
+// v1.4.0  OpenAI 모델 선택 버튼 추가 (GPT-5·GPT-4.1·GPT-4o·o4-mini 계열, 누르면 모델 입력칸에 바로 반영)
 // v1.3.0  STEP 5 수업 배포: 학생용 HTML·활동지(순서 맞추기·연도 맞히기)·과제(타임라인 만들기)·결과 집계·HWPX·PNG·이벤트 편집기·TIMELINE HISTORY
 // v1.2.1  STEP 4 디자인: 소프트 UI 통일, 회색 태그+아이콘, 깨진 이미지 대체, 움직임 줄이기, 휴대폰은 세로 기본
 // v1.2.0  STEP 3 제작·탐색: 일괄 등록·자료에서 추출, 세기·10년·1년 확대·축소, 휠·드래그 이동, 연도로 이동, 병렬 트랙, AI 해설·출처·연결선, 발표 모드
 // v1.1.0  STEP 2 AI 연결: 제공자·키·모델·연결 확인, AI 타임라인 초안, 키 저장 끄기·삭제, COURSE INFO, 접기·펼치기
 // v1.0.0  STEP 1 기본 골격: 사건 입력·시간순 자동 정렬·기원전·기간형·상세 팝업·필터·검색·가로/세로·JSON 저장
-const APP_VERSION = 'v1.3.0';
+const APP_VERSION = 'v1.4.0';
 const $ = id => document.getElementById(id);
 const KIT = chronoKit();
 const { esc, fmtYear, fmtYearKo, fmtSpan } = KIT;
@@ -894,6 +898,13 @@ const PROVIDERS = {
   claude: { name: 'Claude', model: 'claude-sonnet-5-5', placeholder: 'sk-ant-...' },
   openai: { name: 'OpenAI', model: 'gpt-4.1', placeholder: 'sk-...' },
   gemini: { name: 'Gemini', model: 'gemini-2.5-flash', placeholder: 'AIza...' }
+};
+// 모델 빠른 선택: 버튼을 누르면 모델 입력칸에 바로 들어감 (목록에 없는 모델은 직접 입력)
+const MODEL_PRESETS = {
+  openai: [
+    { id: 'gpt-5', note: '고성능' }, { id: 'gpt-5-mini', note: '빠름·저렴' }, { id: 'gpt-5-nano', note: '가장 저렴' },
+    { id: 'gpt-4.1', note: '기본' }, { id: 'gpt-4.1-mini', note: '빠름' }, { id: 'gpt-4o', note: '범용' }, { id: 'o4-mini', note: '추론' }
+  ]
 };
 const keys = { claude: '', openai: '', gemini: '' };
 const models = Object.fromEntries(Object.entries(PROVIDERS).map(([k, p]) => [k, p.model]));
@@ -1028,12 +1039,25 @@ function syncProviderUI() {
   $('apiKey').placeholder = PROVIDERS[provider].placeholder;
   $('model').value = models[provider];
   $('model').placeholder = PROVIDERS[provider].model;
-  fillModelList([PROVIDERS[provider].model]);
+  fillModelList([PROVIDERS[provider].model, ...(MODEL_PRESETS[provider] || []).map(m => m.id)]);
+  renderModelPresets();
   updateMode();
 }
+function renderModelPresets() {
+  const list = MODEL_PRESETS[provider] || [];
+  $('modelPresets').classList.toggle('hidden', !list.length);
+  $('modelPresets').innerHTML = list.length ? `<span class="text-[11px] font-bold text-mute mr-0.5">${PROVIDERS[provider].name} 모델</span>` + list.map(m =>
+    `<button type="button" data-preset="${esc(m.id)}" aria-pressed="${m.id === currentModel()}" class="pill px-2.5 py-0.5 text-[11px]" title="${esc(m.note)}"><span class="font-disp">${esc(m.id)}</span></button>`).join('') : '';
+}
+$('modelPresets').addEventListener('click', e => {
+  const b = e.target.closest('[data-preset]');
+  if (!b) return;
+  $('model').value = b.dataset.preset;
+  $('model').dispatchEvent(new Event('input'));
+});
 providerRadios.forEach(r => r.addEventListener('change', () => { if (r.checked) { provider = r.value; syncProviderUI(); saveSettings(); } }));
 $('apiKey').addEventListener('input', () => { keys[provider] = $('apiKey').value.trim(); updateMode(); saveSettings(); });
-$('model').addEventListener('input', () => { models[provider] = $('model').value.trim(); updateMode(); saveSettings(); });
+$('model').addEventListener('input', () => { models[provider] = $('model').value.trim(); renderModelPresets(); updateMode(); saveSettings(); });
 $('toggleKey').onclick = () => {
   const show = $('apiKey').type === 'password';
   $('apiKey').type = show ? 'text' : 'password';
